@@ -1,87 +1,54 @@
-# Hversu oft borgar sig að reyna við 4th down?
+# 4th down: go for it, kick, or punt?
 
-Verkefni í Hagnýtri líkindafræði.  Markov-keðju hermir fyrir NFL sóknir og Monte Carlo
-samanburður á 11 mismunandi 4th down stefnum, metinn úr play-by-play gögnum
-NFL 2018–2025 (nflverse, ~372 þúsund kerfi í deildarkeppni).
+Applied Probability (T-811, Reykjavik University) group project.  For every 4th-down situation
+(yards to go × field position) we find the call with the highest **expected points**, and the
+**probabilities** behind it, from NFL play-by-play data 2018–2025 (nflverse).
 
-**Niðurstöðurnar eru í [results/NIDURSTODUR.md](results/NIDURSTODUR.md)** (töflur og gröf).
+**Open [`analysis.ipynb`](analysis.ipynb)**: all plots and tables, with short explanations.
 
-## Keyrsla
+## Method
+
+1. **Probabilities from data:** yards gained per play, P(1st down | yards to go), P(FG good | distance)
+   (logistic regression), punt distances, and what coaches actually do on 4th down.
+2. **Markov chain:** state = (down, yards to go, field position). The chain runs until the next score
+   (absorbing states).  Expected points for every state come from one linear system, (I − A)·EP = r.
+3. **Handbook:** on 4th down, compare EP after going for it, a field goal and a punt.  Also the
+   **break-even conversion probability**: go for it when P(convert) is above it.
+4. **Monte Carlo:** play-by-play simulation of the chain to check the exact solution (LLN/CLT), and a
+   bootstrap over the data (200 re-estimations) for P(going for it is the best call).
+5. **Coaches vs the handbook:** every real 4th-down decision valued with the model, and simple rules
+   ("go for it if togo ≤ X") compared in expected points per game.
+6. **Side note, playoffs vs regular season:** the same handbook applied to playoff 4th downs, to test
+   whether coaches are more cautious in the playoffs (situation-adjusted go rate, z-tests).
+
+## Setup
 
 ```bash
-pip install pandas numpy scipy matplotlib
-# sækja play_by_play_YYYY.csv.gz af https://github.com/nflverse/nflverse-data/releases/tag/pbp
-# og vista sem data/pbp_YYYY.csv.gz  (2018-2025)
-python 01_load_data.py     # les gögnin                        (~30 s)
-python 02_estimate.py      # metur líkur -> model.pkl          (~10 s)
-python 03_experiments.py   # Monte Carlo hermun -> results/    (~10-15 mín)
-python 04_figures.py       # gröf -> figures/
-python 05_report.py        # töflur -> results/NIDURSTODUR.md
+conda create -n nfl4th python numpy pandas scipy matplotlib notebook    # or: pip install -r requirements.txt
+conda activate nfl4th
+jupyter notebook analysis.ipynb
 ```
 
-`model.pkl` fylgir með, svo það má byrja á skrefi 3 án þess að sækja gögnin.
+The first run downloads the data (~150 MB) into `data/` and caches it.  The bootstrap result is saved in
+`cache/bootstrap.npz` (committed), so the notebook runs in about a minute.  Set `RECOMPUTE = True` at the
+top of the notebook to redo it (~6 min).
 
-## Skrárnar
+## Code (`fourth_down/`)
 
-Gögn → líkur → hermir → niðurstöður:
-
-| Skrá | Hlutverk |
+| File | Purpose |
 |---|---|
-| `common.py` | Slóðir, fastar og hólfaskiptingar sem fleiri skrár nota. Útskýrir `pos` og `togo`. |
-| `01_load_data.py` | Les gögnin og heldur aðeins nauðsynlegum dálkum |
-| `02_estimate.py` | Metur allar líkur, eitt fall á hvern lið (yardar, p(d), pFG, punt, kickoff, þjálfarar) |
-| `model.py` | Dregur slembiútkomur úr metnu líkunum: eitt kerfi, FG, punt, kickoff, ákvörðun þjálfara |
-| `strategies.py` | Stefnurnar 11, númeraðar eins og í verkefnislýsingunni |
-| `simulator.py` | Sókn (Markov-keðja), leikur (12 sóknir á lið) og `simulate()` sem metur sigurlíkur |
-| `03_experiments.py` | Keyrir allar stefnurnar, tilgátupróf og staðfestingu á líkaninu |
-| `04_figures.py` | Gröf |
-| `05_report.py` | Skrifar niðurstöðurnar sem læsilegar töflur |
+| `data.py` | Download and load the play-by-play data; the real 4th-down decisions |
+| `estimate.py` | Estimate all probabilities (optionally from a bootstrap resample) |
+| `markov.py` | The Markov chain: build transitions, solve for EP, action values, handbook, policy iteration |
+| `simulate.py` | Monte Carlo simulation of the same chain, to check the exact solution |
+| `analysis.py` | Bootstrap, scoring real decisions, simple rules, situations table |
+| `plots.py` | All plots used in the notebook |
 
-## Líkanið
+## Assumptions
 
-* **Ástand sóknar:** (down, yards to go, `pos`), þar sem `pos` = fjarlægð að endamarki mótherja.
-  Sókn endar í einu gleypiástandi: TD, FG, misheppnað FG, punt, tapaður bolti, tapað á downs, safety.
-* **Kerfi:** yardar dregnir úr raunverulegri dreifingu kerfa með sama down, sama yards-to-go hólfi
-  og svæði (red zone / annað).  3rd og 4th down deila dreifingu (meiri gögn).
-  Líkur á töpuðum bolta metnar í sama hólfi.
-* **pFG(x)** = 1 / (1 + e^-(6.18 − 0.105x)), logistic regression (ML) á 8.241 spörkum.
-* **Punt:** vallarstaða mótherja dregin úr raunverulegum puntum frá svipaðri vallarstöðu (meðalnettó 41 yd).
-* **Þjálfarar (stefna 1):** P(go / FG / punt | yards to go, vallarstaða) úr 18.921 4th down kerfum í 1.–3. leikhluta.
-* **Ef ekki reynt:** FG ef spark ≤ 55 yd (`pos` ≤ 37), annars punt.
-* **Leikur:** 12 sóknir á lið.  Stefnurnar sjá stöðuna í leiknum (`score_diff`) og hversu margar sóknir
-  eru eftir (`drives_left`), sem kemur í stað klukku.
-* **Einföldun:** engin klukka, jafn sterk lið, engar 2-point tilraunir, engin framlenging (jafntefli = ½ sigur).
-
-## Stefnurnar
-
-Stefnur 2–6 og 11 eru hreinar reglur: reyna ef skilyrðið gildir, annars sparka.
-Stefnur 7–10 eru **breytingar á hegðun þjálfara**: þær fylgja stefnu 1 nema í þeim aðstæðum sem
-þær fjalla um, svo munurinn mælir áhrif þessarar einu breytingar.
-
-| Nr. | Stefna | Stikar skannaðir |
-|---|---|---|
-| 1 | Raunveruleg hegðun þjálfara (viðmið) | |
-| 2 | Aldrei reyna | |
-| 3 | Reyna með líkum q | q = 0, 0.1, …, 1 |
-| 4 | Reyna ef yards to go ≤ X | X = 1–15 |
-| 5 | Reyna ef komið er yfir miðlínu (`pos` < 50) | |
-| 6 | Reyna ef yards to go ≤ X og `pos` ≤ Y | 9 × 9 hitakort |
-| 7 | Einskismannsland: alltaf reyna á `pos` 35–45 | |
-| 8 | Nálægt marki: alltaf reyna á `pos` ≤ 5 | |
-| 9 | Alltaf reyna ef undir og ≤ K sóknir eftir (nema FG jafni eða komi liðinu yfir) | K = 1, 2, 3, 4, 6, 12 |
-| 10 | Innan FG-færis: FG ef það gefur > 8 stiga forystu eða minnkar mun úr > 8 í ≤ 8, annars reyna | |
-| 11 | Alltaf reyna | |
-
-Fyrir stefnur með stika er besta gildið úr skönnun hermt aftur með nýjum slembitölum og
-200.000 leikjum, svo það sé ekki ofmetið (besta af mörgum keyrslum er alltaf heppið).
-
-## Helstu niðurstöður
-
-RESULTS_PLACEHOLDER
-
-## Fyrirvarar
-
-* Engin klukka: í raun breytast ákvarðanir eftir tíma, og mótherjinn bregst ekki við árásargjarnri stefnu.
-* 4th down tilraunir eru metnar með 3rd down gögnum; vörnin gæti spilað öðruvísi á 4th down.
-* Hlutfallsleg stærð munar er traustari en nákvæm gildi sigurlíkanna.
-* Jafntefli teljast ½ sigur; þá er Bernoulli-dreifnin örlítið ofmetin, svo öryggisbilin eru íhaldssöm.
+- No clock or score: EP is the right measure in early-game situations, so the data is quarters 1–3
+  (not the last 2 minutes of the half).
+- 3rd and 4th down share one play distribution (4th-down attempts are rare).
+- The handbook values each 4th down assuming the rest of the game is played like today's coaches;
+  the notebook also shows the version where both teams play the handbook (policy iteration).
+- Field goals up to 63 yards; no punts from inside the opponent's 30.

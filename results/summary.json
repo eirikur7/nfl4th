@@ -1,0 +1,16 @@
+{
+  "coach_vs_coach_p": 0.4987275,
+  "coach_vs_coach_z": -1.138162286506162,
+  "always_vs_never_diff": 0.026000000000000023,
+  "always_vs_never_z": 16.474498037250207,
+  "drive_outcomes_sim": {
+    "punt": 0.404565,
+    "FG": 0.166535,
+    "TD": 0.239425,
+    "turnover": 0.110465,
+    "downs": 0.049645,
+    "FG miss": 0.029085,
+    "safety": 0.00028
+  },
+  "pts_per_drive_sim": 2.161965
+}
